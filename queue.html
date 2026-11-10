@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>승인 목록</title>
+<style>
+:root { --bg:#f3f5f9; --card:#fff; --ink:#14213a; --sub:#5d6a80; --line:#dfe4ec; --blue:#2563d8; --green:#14804a; --red:#c0362c; --amber:#a15c00; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 "Pretendard","Malgun Gothic",system-ui,sans-serif; }
+main { max-width:1040px; margin:0 auto; padding:28px 16px 64px; }
+h1 { font-size:26px; margin:0 0 4px; }
+.lead { color:var(--sub); margin:0 0 20px; }
+.tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+.tabs button { border:1px solid var(--line); background:var(--card); color:var(--ink); padding:9px 16px; border-radius:999px; font:inherit; font-weight:600; cursor:pointer; }
+.tabs button.on { background:var(--ink); border-color:var(--ink); color:#fff; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+.top { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:12px; }
+.top h2 { font-size:18px; margin:0; overflow-wrap:anywhere; }
+.badge { font-size:13px; font-weight:700; padding:3px 10px; border-radius:999px; background:#e7ecf5; }
+.badge.승인 { background:#e0f3e8; color:var(--green); }
+.badge.반려 { background:#fbe6e4; color:var(--red); }
+.badge.승인대기 { background:#fff1dc; color:var(--amber); }
+.slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; margin-bottom:12px; }
+.slides img { width:168px; height:210px; flex:none; border-radius:8px; cursor:zoom-in; display:block; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 12px; background:#f7f9fc; border:1px solid var(--line); border-radius:10px; padding:14px; font:inherit; font-size:15px; max-height:260px; overflow-y:auto; }
+.notice { border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:15px; }
+.notice.warn { background:#fff1dc; color:#7a4600; }
+.notice.bad { background:#fbe6e4; color:#8c261e; }
+.notice.ok { background:#e0f3e8; color:#0e6239; }
+.row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.row button, .form button { border:1px solid var(--line); background:#fff; color:var(--ink); padding:9px 16px; border-radius:9px; font:inherit; font-weight:600; cursor:pointer; }
+.row button.go, .form button.go { background:var(--blue); border-color:var(--blue); color:#fff; }
+.row button.stop { color:var(--red); }
+.spacer { flex:1; }
+.form { margin-top:12px; display:grid; gap:8px; }
+.form textarea, .form input { width:100%; font:inherit; padding:10px 12px; border:1px solid var(--line); border-radius:9px; }
+.form label { font-size:14px; color:var(--sub); }
+details { margin-top:12px; color:var(--sub); font-size:14px; }
+details li { margin:2px 0; overflow-wrap:anywhere; }
+a { color:var(--blue); overflow-wrap:anywhere; }
+.empty { text-align:center; color:var(--sub); padding:56px 0; }
+#toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 18px; border-radius:10px; opacity:0; transition:opacity .2s; pointer-events:none; max-width:calc(100vw - 32px); }
+#toast.show { opacity:1; }
+#zoom { position:fixed; inset:0; background:rgba(10,16,30,.85); display:none; align-items:center; justify-content:center; padding:16px; cursor:zoom-out; }
+#zoom.show { display:flex; }
+#zoom img { max-width:100%; max-height:100%; border-radius:8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>승인 목록</h1>
+  <p class="lead">승인한 게시물만 발행 처리할 수 있습니다. 업로드는 직접 하고, 올린 뒤 발행 완료를 눌러 기록합니다.</p>
+  <div class="tabs" id="tabs"></div>
+  <div id="list"></div>
+</main>
+<div id="toast" role="status"></div>
+<div id="zoom"><img alt="슬라이드 크게 보기"></div>
+<script>
+const TABS = ['승인대기', '승인', '반려', '발행완료'];
+let items = [];
+let tab = '승인대기';
+const open = new Map();
+
+const h = (tag, props = {}, ...children) => {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === 'class') el.className = value;
+    else if (key === 'onclick') el.addEventListener('click', value);
+    else el.setAttribute(key, value);
+  }
+  el.append(...children.filter((c) => c !== null && c !== undefined));
+  return el;
+};
+
+const toast = (text) => {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => el.classList.remove('show'), 2200);
+};
+
+async function post(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '처리하지 못했습니다');
+  return data;
+}
+
+async function load() {
+  const res = await fetch('/api/items');
+  items = (await res.json()).items;
+  render();
+}
+
+async function act(item, action, extra, done) {
+  try {
+    await post('/api/action', { id: item.id, action, ...extra });
+    open.delete(item.id);
+    toast(done);
+    await load();
+  } catch (error) {
+    toast(error.message);
+    await load();
+  }
+}
+
+const when = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '');
+const imageUrl = (item, file) => `/image?id=${encodeURIComponent(item.id)}&file=${encodeURIComponent(file)}`;
+
+function form(item) {
+  const mode = open.get(item.id);
+  if (mode === 'reject') {
+    const area = h('textarea', { rows: '3', placeholder: '무엇을 고칠지 적어 주세요', 'aria-label': '수정 요청 내용' });
+    return h('div', { class: 'form' }, area,
+      h('div', { class: 'row' },
+        h('button', { class: 'go', onclick: () => act(item, 'reject', { note: area.value }, '수정 요청을 남겼습니다') }, '수정 요청 보내기'),
+        h('button', { onclick: () => { open.delete(item.id); render(); } }, '취소')));
+  }
+  if (mode === 'publish') {
+    const input = h('input', { type: 'url', placeholder: 'https://www.instagram.com/p/…', id: `url-${item.id}` });
+    return h('div', { class: 'form' },
+      h('label', { for: `url-${item.id}` }, '게시물 주소 (없으면 비워 두세요)'), input,
+      h('div', { class: 'row' },
+        h('button', { class: 'go', onclick: () => act(item, 'publish', { url: input.value.trim() }, '발행 완료로 기록했습니다') }, '발행 완료 기록'),
+        h('button', { onclick: () => { open.delete(item.id); render(); } }, '취소')));
+  }
+  return null;
+}
+
+function actions(item) {
+  const toggle = (mode) => () => { open.set(item.id, mode); render(); };
+  const approve = h('button', { class: 'go', onclick: () => act(item, 'approve', {}, '승인했습니다') }, '승인');
+  const reject = h('button', { class: 'stop', onclick: toggle('reject') }, '수정 요청');
+  if (item.state === '승인대기') return [approve, reject];
+  if (item.state === '승인') return [h('button', { class: 'go', onclick: toggle('publish') }, '인스타에 올렸어요'), reject];
+  if (item.state === '반려') return [approve];
+  return [];
+}
+
+function card(item) {
+  const copy = h('button', { onclick: async () => { await navigator.clipboard.writeText(item.caption); toast('캡션을 복사했습니다'); } }, '캡션 복사');
+  const folder = h('button', { onclick: () => post('/api/open', { id: item.id }).then(() => toast('폴더를 열었습니다')).catch((e) => toast(e.message)) }, '이미지 폴더 열기');
+  return h('article', { class: 'card' },
+    h('div', { class: 'top' }, h('h2', {}, item.name), h('span', { class: `badge ${item.state}` }, item.state)),
+    item.changed ? h('div', { class: 'notice warn' }, '이전 확인 후 이미지나 캡션이 바뀌어 다시 확인이 필요합니다.') : null,
+    item.state === '반려' && item.note ? h('div', { class: 'notice bad' }, `수정 요청: ${item.note}`) : null,
+    item.state === '발행완료' ? h('div', { class: 'notice ok' }, `${when(item.updatedAt)} 발행 기록 `, /^https:\/\//.test(item.url) ? h('a', { href: item.url, target: '_blank', rel: 'noopener noreferrer' }, item.url) : null) : null,
+    h('div', { class: 'slides' }, ...item.slides.map((file, i) => h('img', { src: imageUrl(item, file), alt: `슬라이드 ${i + 1}`, loading: 'lazy', onclick: () => zoom(imageUrl(item, file)) }))),
+    h('pre', {}, item.caption),
+    h('div', { class: 'row' }, ...actions(item), h('span', { class: 'spacer' }), copy, folder),
+    form(item),
+    item.history.length ? h('details', {}, h('summary', {}, `기록 ${item.history.length}건`),
+      h('ul', {}, ...item.history.map((row) => h('li', {}, `${when(row.at)} · ${row.from} → ${row.to}${row.note ? ` · ${row.note}` : ''}${row.url ? ` · ${row.url}` : ''}`)))) : null);
+}
+
+function render() {
+  const tabs = document.getElementById('tabs');
+  tabs.replaceChildren(...TABS.map((name) => {
+    const count = items.filter((item) => item.state === name).length;
+    return h('button', { class: name === tab ? 'on' : '', onclick: () => { tab = name; render(); } }, `${name} ${count}`);
+  }));
+  const shown = items.filter((item) => item.state === tab);
+  const list = document.getElementById('list');
+  list.replaceChildren(...(shown.length ? shown.map(card) : [h('p', { class: 'empty' }, `${tab} 게시물이 없습니다`)]));
+}
+
+const zoomBox = document.getElementById('zoom');
+function zoom(src) { zoomBox.querySelector('img').src = src; zoomBox.classList.add('show'); }
+zoomBox.addEventListener('click', () => zoomBox.classList.remove('show'));
+
+load();
+</script>
+</body>
+</html>

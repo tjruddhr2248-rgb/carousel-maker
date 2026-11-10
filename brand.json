@@ -1,0 +1,28 @@
+{
+  "handle": "@ai.woongjeong",
+  "colors": {
+    "bg": "#0C1E3B",
+    "accent": "#3D8BFF",
+    "light": "#9EC5FF",
+    "text": "#FFFFFF",
+    "body": "#DCE6F7",
+    "sub": "#A9B4C7",
+    "panel": "rgba(61,139,255,0.13)"
+  },
+  "baseTags": ["#소상공인마케팅", "#자영업자", "#AI마케팅", "#챗GPT활용법", "#웅케팅"],
+  "cta": {
+    "저장": { "slide": ["저장해 두고", "오늘 하나만", "따라 해 보세요"], "caption": "저장해 두고 오늘 하나만 따라 해 보세요." },
+    "팔로우": { "slide": ["팔로우하고", "다음 순서도", "받아 보세요"], "caption": "다음 순서도 이어서 올립니다. 팔로우해 두세요." },
+    "공유": { "slide": ["필요한 사장님께", "공유해 주세요"], "caption": "필요한 사장님께 공유해 주세요." },
+    "댓글": { "slide": ["업종을 댓글로", "남겨 주세요"], "caption": "업종을 댓글로 남겨 주시면 다음 예시로 씁니다." }
+  },
+  "bannedWords": ["무조건", "100%", "최고", "유일", "보장"],
+  "limits": {
+    "minSteps": 2,
+    "maxSteps": 8,
+    "headlineMaxLines": 3,
+    "titleMaxLines": 4,
+    "captionMax": 2200,
+    "tagsMax": 30
+  }
+}
